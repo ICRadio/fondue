@@ -1,0 +1,19 @@
+# Put this file in:
+# /etc/systemd/system/fondue.service
+
+[Unit]
+Description=Fondue Source Switcher Video Stream
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/source_switcher/app.py
+WorkingDirectory=/home/pi/source_switcher
+Restart=always
+User=icradio
+
+[Install]
+WantedBy=multi-user.target
+
+# sudo systemctl daemon-reexec
+# sudo systemctl enable fondue
+# sudo systemctl start fondue
