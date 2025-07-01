@@ -2,10 +2,39 @@
 from flask import Flask, request, jsonify
 from manager import SourceManager
 from streamer import Streamer
+from hardware import GPIOController
 
 app = Flask(__name__)
 sources = SourceManager()
 streamer = Streamer()
+
+# Callback from GPIO controller
+def gpio_switch_callback(name):
+    print(f"[GPIO] Toggling to {name}")
+    try:
+        old, new = sources.switch_to(name)
+        old_path = sources.get_sources().get(old, sources.get_sources()[new])
+        new_path = sources.get_sources()[new]
+        streamer.crossfade_stream(old_path, new_path)
+    except Exception as e:
+        print("[GPIO] Failed to switch:", e)
+
+# Start GPIO listener
+gpio = GPIOController(switch_callback=gpio_switch_callback, primary_source="cam1", secondary_source="cam2")
+
+@app.route("/switch_source", methods=["POST"])
+def switch_source():
+    try:
+        name = request.json["name"]
+        gpio.current = name  # sync LED state
+        old, new = sources.switch_to(name)
+        old_path = sources.get_sources()[old]
+        new_path = sources.get_sources()[new]
+        streamer.crossfade_stream(old_path, new_path)
+        gpio._update_led()
+        return jsonify({"status": "switching", "from": old, "to": new})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 @app.route("/add_source", methods=["POST"])
 def add_source():
@@ -18,22 +47,6 @@ def remove_source():
     name = request.json["name"]
     sources.remove_source(name)
     return jsonify({"status": "removed", "name": name})
-
-@app.route("/switch_source", methods=["POST"])
-def switch_source():
-    try:
-        name = request.json["name"]
-        old, new = sources.switch_to(name)
-        if old:
-            old_path = sources.get_sources()[old]
-        else:
-            old_path = sources.get_sources()[new]  # fallback
-        new_path = sources.get_sources()[new]
-
-        streamer.crossfade_stream(old_path, new_path)
-        return jsonify({"status": "switching", "from": old, "to": new})
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 400
 
 @app.route("/status", methods=["GET"])
 def status():
