@@ -1,0 +1,13 @@
+version: "3"
+
+services:
+  switcher:
+    build: .
+    restart: always
+    privileged: true  # needed for GPIO access
+    devices:
+      - "/dev/gpiomem:/dev/gpiomem"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./sources.json:/app/sources.json
