@@ -1,8 +1,8 @@
 # app.py
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from manager import SourceManager
 from streamer import Streamer
-from hardware import GPIOController
+# from hardware import GPIOController
 
 app = Flask(__name__)
 sources = SourceManager()
@@ -20,18 +20,27 @@ def gpio_switch_callback(name):
         print("[GPIO] Failed to switch:", e)
 
 # Start GPIO listener
-gpio = GPIOController(switch_callback=gpio_switch_callback, primary_source="cam1", secondary_source="cam2")
+# gpio = GPIOController(switch_callback=gpio_switch_callback, primary_source="cam1", secondary_source="cam2")
 
 @app.route("/switch_source", methods=["POST"])
 def switch_source():
     try:
         name = request.json["name"]
-        gpio.current = name  # sync LED state
+        # gpio.current = name  # sync LED state
         old, new = sources.switch_to(name)
-        old_path = sources.get_sources()[old]
-        new_path = sources.get_sources()[new]
-        streamer.crossfade_stream(old_path, new_path)
-        gpio._update_led()
+
+        all_sources = sources.get_sources()
+        old_path = all_sources.get(old)  # might be None
+        new_path = all_sources[new]
+
+        if old_path is None:
+            streamer.start_stream(new_path)
+        if new_path == old_path:
+            return jsonify({'status': "Source Already Active"})
+        else:
+            streamer.crossfade_stream(old_path, new_path)
+
+        # gpio._update_led()
         return jsonify({"status": "switching", "from": old, "to": new})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -54,6 +63,10 @@ def status():
         "active": sources.get_active(),
         "sources": sources.get_sources()
     })
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)

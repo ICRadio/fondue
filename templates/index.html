@@ -1,0 +1,32 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Source Switcher</title>
+  <script src="/static/script.js" defer></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: auto; }
+    button { margin: 5px; padding: 10px; }
+    .source-list { margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>🎛️ Video Source Switcher</h1>
+
+  <div>
+    <strong>Active Source:</strong> <span id="active-source">Loading...</span>
+  </div>
+
+  <div class="source-list">
+    <h2>Available Sources</h2>
+    <ul id="source-list"></ul>
+  </div>
+
+  <h2>Add Source</h2>
+  <form id="add-form">
+    <input type="text" id="source-name" placeholder="Name" required>
+    <input type="text" id="source-path" placeholder="Path or URL" required>
+    <button type="submit">Add</button>
+  </form>
+</body>
+</html>

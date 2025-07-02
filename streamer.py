@@ -8,6 +8,24 @@ class Streamer:
         self.output_path = output_path
         self.lock = threading.Lock()
 
+    def start_stream(self, source_path):
+        """Start streaming from a single input source (no crossfade)."""
+        self.stop_stream()
+
+        cmd = [
+            "ffmpeg",
+            "-re",  # real-time input (for smoother playback)
+            "-i", source_path,
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-c:a", "aac",
+            "-f", "flv",  # or 'mp4' for file output
+            self.output_path
+        ]
+
+        with self.lock:
+            self.current_process = subprocess.Popen(cmd)
+            
     def stop_stream(self):
         with self.lock:
             if self.current_process:
