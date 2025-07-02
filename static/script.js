@@ -12,10 +12,18 @@ async function fetchStatus() {
     const li = document.createElement('li');
     li.textContent = `${name}: ${path} `;
 
-    const btn = document.createElement('button');
-    btn.textContent = 'Switch To';
-    btn.onclick = () => switchSource(name);
-    li.appendChild(btn);
+    // Switch Button
+    const switchBtn = document.createElement('button');
+    switchBtn.textContent = 'Switch To';
+    switchBtn.onclick = () => switchSource(name);
+    li.appendChild(switchBtn);
+
+    // Remove Button
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = '🗑 Remove';
+    removeBtn.style.backgroundColor = '#f55';
+    removeBtn.onclick = () => removeSource(name);
+    li.appendChild(removeBtn);
 
     list.appendChild(li);
   });
@@ -23,6 +31,15 @@ async function fetchStatus() {
 
 async function switchSource(name) {
   await fetch('/switch_source', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  await fetchStatus();
+}
+
+async function removeSource(name) {
+  await fetch('/remove_source', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name })
