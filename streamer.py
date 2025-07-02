@@ -8,11 +8,15 @@ import time
 FIFO_PATH = "/tmp/input_pipe"
 
 class Streamer:
-    def __init__(self, output_path="output.mp4"):
+    def __init__(self, output_path="output.mp4", default_source=None):
         self.output_path = output_path
+        self.default_source = default_source
         self.ffmpeg_proc = None
         self.injection_lock = threading.Lock()
         self._ensure_fifo()
+        self.start_stream()
+        if self.default_source:
+            self.inject_source(self.default_source)
 
     def _ensure_fifo(self):
         if os.path.exists(FIFO_PATH):
