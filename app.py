@@ -48,8 +48,14 @@ def switch_source():
 @app.route("/add_source", methods=["POST"])
 def add_source():
     data = request.json
-    sources.add_source(data["name"], data["path"])
-    return jsonify({"status": "added", "name": data["name"]})
+    name = data["name"]
+    path = data["path"]
+
+    if name in sources.get_sources():
+        return jsonify({"error": f"Source '{name}' already exists."}), 400
+
+    sources.add_source(name, path)
+    return jsonify({"status": "added", "name": name})
 
 @app.route("/remove_source", methods=["POST"])
 def remove_source():

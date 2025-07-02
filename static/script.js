@@ -51,13 +51,21 @@ document.getElementById('add-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = document.getElementById('source-name').value;
   const path = document.getElementById('source-path').value;
-  await fetch('/add_source', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, path })
-  });
+  await addSource(name, path);
   document.getElementById('add-form').reset();
   await fetchStatus();
 });
 
+async function addSource(name, path) {
+  const res = await fetch('/add_source', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, path })
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json();
+    alert(errorData.error || "Failed to add source");
+  }
+}
 fetchStatus();
