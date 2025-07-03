@@ -27,7 +27,7 @@ class InputStream:
         self.input_process = None
         self.input_string = input_string
         self.lock = threading.Lock()
-        self.output_cmd = ["-vn", "-c:a", "pcm_s16le", '-f', 'nut', FIFO_PATH]
+        self.output_cmd = ["-vn", "-c:a", "pcm_s16le", '-f', 'nut',  "-y", FIFO_PATH]
         # -vn ensures video packets are not put in the output
         # pipe:1 is equivalent to stdout
         # pipe:0 would be equivalent to stdin 
@@ -46,24 +46,24 @@ class InputStream:
     def start_stream(self, input_string=None):
         ''' begin writing to the FIFO from a general source as described by input_string'''
         
+        self.stop_stream()    
         if input_string:
             #optional parameter allows starting a stream from a new source
             self.input_string = input_string
 
-        ffmpeg_cmd = ["ffmpeg"] + ffmpeg_string_to_subprocess_list(self.input_string) + self.output_cmd    
-        self.stop_stream()        
+        ffmpeg_cmd = ["ffmpeg"] + ffmpeg_string_to_subprocess_list(self.input_string) + self.output_cmd                
         self.input_process= subprocess.Popen(ffmpeg_cmd, preexec_fn=os.setsid)
         
     def crossfade_to_new_source(self, new_input_string):
         self.stop_stream()
         #phase one, do the crossfade
-        crossfade_command = ["ffmpeg", "-y"] + ffmpeg_string_to_subprocess_list(self.input_string) + ffmpeg_string_to_subprocess_list(new_input_string)
-        crossfade_command += ["-filter_complex",
-                                f"[0:a][1:a]acrossfade=d={FADE_DURATION}[a]",
-                                "-map", "[a]",
-                                "-t", str(FADE_DURATION + 2),]
-        crossfade_command += self.output_cmd
-        subprocess.run(crossfade_command)
+        # crossfade_command = ["ffmpeg", "-y"] + ffmpeg_string_to_subprocess_list(self.input_string) + ffmpeg_string_to_subprocess_list(new_input_string)
+        # crossfade_command += ["-filter_complex",
+        #                         f"[0:a][1:a]acrossfade=d={FADE_DURATION}[a]",
+        #                         "-map", "[a]",
+        #                         "-t", str(FADE_DURATION + 2),]
+        # crossfade_command += self.output_cmd
+        # subprocess.run(crossfade_command)
         #phase 2, start streaming new source
         self.start_stream(new_input_string)
         
