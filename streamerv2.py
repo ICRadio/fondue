@@ -12,7 +12,7 @@ def ffmpeg_string_to_subprocess_list(ffmpeg_string:str):
     argument_list = ffmpeg_string.split(' ')
     return argument_list
 
-# note a media file is a two level structure. 
+# note a media file/stream is a two level structure. 
 # It is a container (-f parameter in ffmpeg) 
 # that contains audio (and video) packets encoded in specific format (-c:a (-c:v) parameter in ffmpeg)
 # -f specifies the multiplexer aka muxer and -c:a specifies the audio codec
@@ -29,8 +29,6 @@ class InputStream:
         self.lock = threading.Lock()
         self.output_cmd = ["-vn", "-c:a", "pcm_s16le", '-f', 'nut',  "-y", FIFO_PATH]
         # -vn ensures video packets are not put in the output
-        # pipe:1 is equivalent to stdout
-        # pipe:0 would be equivalent to stdin 
 
     def __del__(self):
         self.stop_stream()
@@ -74,7 +72,7 @@ class InputStream:
 
 
 class OutputStream:
-    '''class to read raw audio (pcms16_le, NUT) from a named pipe and write to a general output stream'''
+    '''class to read raw audio (pcm_s16le, NUT) from a named pipe and write to a general output stream'''
     def __init__(self, output_string:str):
         self.output_process = None
         self.output_string = output_string
