@@ -4,17 +4,18 @@ from manager import SourceManager
 from streamer import Streamer
 # from hardware import GPIOController
 
+DEFAULT_SOURCE='audio1'
 app = Flask(__name__)
-sources = SourceManager()
-streamer = Streamer()
+sources = SourceManager(default_source=DEFAULT_SOURCE)
+streamer = Streamer(default_source=sources.sources[DEFAULT_SOURCE])
 
 # Callback from GPIO controller
 def gpio_switch_callback(name):
     print(f"[GPIO] Toggling to {name}")
     try:
         old, new = sources.switch_to(name)
-        old_path = sources.get_sources().get(old, sources.get_sources()[new])
-        new_path = sources.get_sources()[new]
+        old_path = sources.sources.get(old, sources.sources[new])
+        new_path = sources.sources[new]
         streamer.crossfade_stream(old_path, new_path)
     except Exception as e:
         print("[GPIO] Failed to switch:", e)
@@ -25,19 +26,19 @@ def gpio_switch_callback(name):
 @app.route("/switch_source", methods=["POST"])
 def switch_source():
     try:
+        print('[MAIN] Trying to switch source')
         name = request.json["name"]
         # gpio.current = name  # sync LED state
         old, new = sources.switch_to(name)
 
-        all_sources = sources.get_sources()
-        old_path = all_sources.get(old)  # might be None
-        new_path = all_sources[new]
+        old_path = sources.sources.get(old)  # might be None
+        new_path = sources.sources[new]
 
-        if old_path is None:
-            streamer.start_stream(new_path)
         if new_path == old_path:
+            print('Source Already Active')
             return jsonify({'status': "Source Already Active"})
         else:
+            print('Attempting Crossfade')
             streamer.crossfade_stream(old_path, new_path)
 
         # gpio._update_led()
@@ -51,7 +52,7 @@ def add_source():
     name = data["name"]
     path = data["path"]
 
-    if name in sources.get_sources():
+    if name in sources.sources:
         return jsonify({"error": f"Source '{name}' already exists."}), 400
 
     sources.add_source(name, path)
@@ -67,7 +68,7 @@ def remove_source():
 def status():
     return jsonify({
         "active": sources.get_active(),
-        "sources": sources.get_sources()
+        "sources": sources.sources
     })
 
 @app.route("/")

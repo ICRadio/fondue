@@ -3,10 +3,10 @@ import json
 import os
 
 class SourceManager:
-    def __init__(self, filepath="sources.json"):
+    def __init__(self, filepath="sources.json", default_source=None):
         self.filepath = filepath
         self.sources = {}
-        self.active = None
+        self.active = default_source
         self._load_sources()
 
     def _load_sources(self):
@@ -28,9 +28,6 @@ class SourceManager:
         if name in self.sources:
             del self.sources[name]
             self._save_sources()
-
-    def get_sources(self):
-        return self.sources
 
     def get_active(self):
         return self.active

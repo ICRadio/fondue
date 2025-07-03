@@ -1,4 +1,6 @@
 {
   "test1": "/home/pi/video1.mp4",
-  "test2": "/home/pi/video2.mp4"
+  "test2": "/home/pi/video2.mp4",
+  "audio1": "c1c2.wav",
+  "audio2": "creep.mp3"
 }
