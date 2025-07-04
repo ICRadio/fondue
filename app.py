@@ -2,12 +2,22 @@
 from flask import Flask, request, jsonify, render_template
 from manager import SourceManager
 from streamer import Streamer
+# from streamer_nofade import Streamer
 # from hardware import GPIOController
+import os
 
-DEFAULT_SOURCE='audio1'
+import sys
+import atexit
+
+
+DEFAULT_SOURCE = 'audio1'
 app = Flask(__name__)
 sources = SourceManager(default_source=DEFAULT_SOURCE)
-streamer = Streamer(default_source=sources.sources[DEFAULT_SOURCE])
+streamer = Streamer(
+    output_path='output.mp3',
+    default_source=sources.sources[DEFAULT_SOURCE]
+)
+
 
 # Callback from GPIO controller
 def gpio_switch_callback(name):
@@ -23,6 +33,7 @@ def gpio_switch_callback(name):
 # Start GPIO listener
 # gpio = GPIOController(switch_callback=gpio_switch_callback, primary_source="cam1", secondary_source="cam2")
 
+
 @app.route("/switch_source", methods=["POST"])
 def switch_source():
     try:
@@ -30,21 +41,24 @@ def switch_source():
         name = request.json["name"]
         # gpio.current = name  # sync LED state
         old, new = sources.switch_to(name)
-
-        old_path = sources.sources.get(old)  # might be None
-        new_path = sources.sources[new]
-
-        if new_path == old_path:
+        if old == new:
             print('Source Already Active')
             return jsonify({'status': "Source Already Active"})
-        else:
-            print('Attempting Crossfade')
-            streamer.crossfade_stream(old_path, new_path)
 
-        # gpio._update_led()
+        print('[MAIN] Crossfading...')
+        new_path = sources.sources[new]
+        streamer.crossfade_stream(new_path)
         return jsonify({"status": "switching", "from": old, "to": new})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/remove_source", methods=["POST"])
+def remove_source():
+    name = request.json["name"]
+    sources.remove_source(name)
+    return jsonify({"status": "removed", "name": name})
+
 
 @app.route("/add_source", methods=["POST"])
 def add_source():
@@ -58,11 +72,6 @@ def add_source():
     sources.add_source(name, path)
     return jsonify({"status": "added", "name": name})
 
-@app.route("/remove_source", methods=["POST"])
-def remove_source():
-    name = request.json["name"]
-    sources.remove_source(name)
-    return jsonify({"status": "removed", "name": name})
 
 @app.route("/status", methods=["GET"])
 def status():
@@ -71,9 +80,23 @@ def status():
         "sources": sources.sources
     })
 
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+def cleanup_pipe(signum, frame):
+    print('CLEANING UP')
+    os.system(
+        'rm -rf /tmp/input_pipe'
+    )
+    sys.exit(0)
+    return
+
+
+# signal.signal(signal.SIGINT, cleanup_pipe)
+atexit.register(streamer.shutdown)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
