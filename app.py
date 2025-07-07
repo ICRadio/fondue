@@ -2,19 +2,18 @@
 from flask import Flask, request, jsonify, render_template
 from manager import SourceManager
 from streamer import Streamer
-# from streamer_nofade import Streamer
 # from hardware import GPIOController
 import os
-
 import sys
 import atexit
 
+DEFAULT_SOURCE = "STUDIO"
+OUTPUT_PATH = 'output.mp3'
 
-DEFAULT_SOURCE = 'audio1'
 app = Flask(__name__)
 sources = SourceManager(default_source=DEFAULT_SOURCE)
 streamer = Streamer(
-    output_path='output.mp3',
+    output_path=OUTPUT_PATH,
     default_source=sources.sources[DEFAULT_SOURCE]
 )
 
