@@ -47,7 +47,7 @@ def switch_source():
 
         print('[MAIN] Crossfading...')
         new_path = sources.sources[new]
-        streamer.crossfade_stream(new_path)
+        streamer.crossfade_stream(new_path, duration=2)
         return jsonify({"status": "switching", "from": old, "to": new})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

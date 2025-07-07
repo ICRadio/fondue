@@ -8,57 +8,64 @@ FIFO_PATH = Path("/tmp/input_pipe")
 
 
 class Streamer:
-    def __init__(self, output_path: str = "output.mp3", default_source: str = 'audio1') -> None:
-        print('[STREAMER] Created')
+    def __init__(self,
+                 output_path: str = "output.mp3",
+                 default_source: str = 'audio1',
+                 fade_duration: int = 2) -> None:
+
         self.output_path = output_path
-        self.lock = threading.Lock()
-        self._out_proc    = None
-        self._inject_proc = None
-        self._active_url  = None
+        self.fade = float(fade_duration)
+        self._lock = threading.Lock()
+        self._writer: subprocess.Popen
+        self._writer = None
+        self._active_url: str
+        self._active_url = None
 
+        self._play_start_time = None
         self._make_fifo()
+        self._fifo_dummy_fd = os.open(str(FIFO_PATH), os.O_RDWR)
         self._start_output_proc()
-
         if default_source:
             self.inject_source(default_source)
+            self._active_url = default_source
 
     # -- Private methods
     def _make_fifo(self) -> None:
         if FIFO_PATH.exists():
             FIFO_PATH.unlink()
         os.mkfifo(FIFO_PATH)
-        print('[STREAMER] FIFO READY')
+        print(f'[STREAMER] FIFO READY at {FIFO_PATH}')
 
     def _start_output_proc(self) -> None:
         cmd = [
             "ffmpeg",
             "-loglevel", "error",
             "-f", "s16le", "-ar", "44100", "-ac", "2",
-            "-i", FIFO_PATH,
+            "-i", str(FIFO_PATH),
             "-c:a", "libmp3lame",
             "-b:a", "192k",
             "-y",  # Overwrite output file
             self.output_path
         ]
-        self._out_proc = subprocess.Popen(
+        subprocess.Popen(
             cmd,
             preexec_fn=os.setsid
         )
 
+    # -- Process management
     @staticmethod
-    def _stop_proc(proc: subprocess.Popen, name: str, timeout: float = 2.0) -> None:
+    def _kill(proc: subprocess.Popen, name: str, timeout: float = 2.0) -> None:
         if proc and proc.poll() is None:
-            print(f'[STREAMER] Stopping {name} process')
-            proc.terminate()
+            print(f'[STREAMER] Killing {name} process')
+            proc.send_signal(subprocess.signal.SIGTERM)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
                 print(f'[STREAMER] {name} process did not terminate in time, killing it')
                 proc.kill()
-            print(f'[STREAMER] {name} process stopped')
+            print(f'[STREAMER] {name} process killed')
 
-    def _spawn_inject(self, url: str) -> subprocess.Popen:
-
+    def _spawn_passthrough(self, url: str) -> subprocess.Popen:
         cmd = [
             "ffmpeg",
             "-re",
@@ -71,79 +78,77 @@ class Streamer:
             "-y",
             str(FIFO_PATH)
         ]
-        print(f'[STREAMER] Injecting source: {url}')
+        print(f'[STREAMER] Spawning passthrough for source: {url}')
         return subprocess.Popen(
             cmd,
             preexec_fn=os.setsid,
         )
 
-    # -- Public methods
-    def inject_source(self, url: str) -> None:
-        with self.lock:
+    def inject_source(self, url: str):
+        with self._lock:
             if url == self._active_url:
                 return
-            self._stop_proc(self._inject_proc, "old-inject")
-            self._inject_proc = self._spawn_inject(url)
-            self._active_url = url
+            self._kill(self._writer, "writer")
 
-    def crossfade_stream(self, url: str, duration: int = 2) -> None:
-        with self.lock:
+            start = time.time()
+            self._writer = self._spawn_passthrough(url)
+            self._active_url = url
+            self._play_start_time = start
+
+    def crossfade_stream(self, url: str, duration: int):
+
+        fade = float(duration or self.fade)
+        with self._lock:
             old_url = self._active_url
             if old_url is None or url == old_url:
-                self.inject_source(url)
-                return
+                return self._inject_source(url)
 
-            if getattr(self, '_xfading', False):
-                print('[STREAMER] Already crossfading, skipping new request')
-                return
-            self._xfading = True
-            old_inject_proc = self._inject_proc
+            print(
+                f'[STREAMER] Crossfading from {old_url} to {url}'
+            )
+            now = time.time()
+            elapsed = 0.0
+            if self._play_start_time is not None:
+                elapsed = now - self._play_start_time
+            print(f'[STREAMER] Elapsed time: {elapsed:.2f} seconds')
+            self._kill(self._writer, "old-writer")
 
-        def _xfade():
-            try:
-                print(f'[STREAMER] Crossfading from {old_url} to {url}')
-                cmd = [
-                    "ffmpeg",
-                    "-loglevel", "error",
-                    "-re", "-i", old_url,
-                    "-re", "-i", url,
-                    "-filter_complex",
-                    (
-                        f"[0:a]atrim=0:{duration},afade=t=out:st=0:d={duration}[a0];"
-                        f"[1:a]atrim=0:{duration},afade=t=in:st=0:d={duration}[a1];"
-                        f"[a0][a1]amix=inputs=2:duration=first[aout]"
-                    ),
-                    "-map", "[aout]",
-                    "-ac", "2",
-                    "-ar", "44100",
-                    "-c:a", "pcm_s16le",
-                    "-f", "s16le",
-                    "-y", str(FIFO_PATH)
-                ]
-
-                xf_proc = subprocess.Popen(
-                    cmd,
-                    preexec_fn=os.setsid
-                )
-                # xf_proc.wait()
-                time.sleep(duration - 0.1)
-                self._spawn_inject(url)
-                self._active_url = url
-                time.sleep(0.1)
-                self._stop_proc(old_inject_proc, "old-inject")
-                print('[STREAMER] Crossfade complete, new source injected')
-
-            finally:
-                with self.lock:
-                    self._xfading = False
-
-        threading.Thread(target=_xfade, daemon=True).start()
+            cmd = [
+                "ffmpeg",
+                "-loglevel", "error",
+                "-ss", f"{elapsed:.3f}", "-re", "-i", old_url,
+                "-re", "-i", url,
+                "-filter_complex",
+                (
+                    f"[0:a]atrim=0:{fade},afade=t=out:st=0:d={fade}[a0];"
+                    f"[1:a]afade=t=in:st=0:d={fade}[a1];"
+                    f"[a0][a1]amix="
+                    f"inputs=2:duration=longest:"
+                    f"dropout_transition={fade}[aout]"
+                ),
+                "-map", "[aout]",
+                "-ac", "2",
+                "-ar", "44100",
+                "-c:a", "pcm_s16le",
+                "-f", "s16le",
+                "-y", str(FIFO_PATH)
+            ]
+            start = now
+            self._writer = subprocess.Popen(
+                cmd,
+                preexec_fn=os.setsid
+            )
+            self._active_url = url
+            self._play_start_time = start
 
     def shutdown(self) -> None:
         print('[STREAMER] Shutting down')
-        with self.lock:
-            self._stop_proc(self._inject_proc, "inject")
-            self._stop_proc(self._out_proc, "output")
+        with self._lock:
+            self._kill(self._writer, "writer")
+
+            if hasattr(self, '_fifo_dummy_fd'):
+                os.close(self._fifo_dummy_fd)
+                del self._fifo_dummy_fd
             if FIFO_PATH.exists():
                 FIFO_PATH.unlink()
         print('[STREAMER] Shutdown complete')
