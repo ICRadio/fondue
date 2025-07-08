@@ -7,8 +7,8 @@ After=network.target
 StartLimitIntervalSec=0
 
 [Service]
-ExecStart=/usr/bin/python3 /home/icradio/python_fondue/fondue/app.py
-WorkingDirectory=/home/icradio/python_fondue/fondue
+ExecStart=/usr/bin/python3 /home/icradio/fondue/app.py
+WorkingDirectory=/home/icradio/fondue
 Restart=always
 User=icradio
 
