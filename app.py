@@ -36,7 +36,6 @@ def gpio_switch_callback(name):
 @app.route("/switch_source", methods=["POST"])
 def switch_source():
     try:
-        print('[MAIN] Trying to switch source')
         name = request.json["name"]
         # gpio.current = name  # sync LED state
         old, new = sources.switch_to(name)
@@ -46,7 +45,12 @@ def switch_source():
 
         print('[MAIN] Crossfading...')
         new_path = sources.sources[new]
-        streamer.crossfade_stream(new_path, duration=2)
+        status = streamer.crossfade_stream(new_path, duration=2)
+        if status is False:
+            # If crossfade fails, revert to old source
+            sources.switch_to(old)
+            print(f'[MAIN] Crossfade failed, remaining with old source: {old}')
+            return jsonify({"error": "Failed to crossfade stream."}), 500
         return jsonify({"status": "switching", "from": old, "to": new})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400

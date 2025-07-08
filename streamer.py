@@ -131,7 +131,7 @@ class Streamer:
                 return self._inject_source(url)
             if not self._validate_stream(url):
                 print(f'[STREAMER] Invalid stream URL: {url}')
-                return
+                return False
 
             print(
                 f'[STREAMER] Crossfading from {old_url} to {url}'
