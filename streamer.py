@@ -44,6 +44,8 @@ class Streamer:
             "-i", str(FIFO_PATH),
             "-c:a", "libmp3lame",
             "-b:a", "192k",
+            "-f", "mp3",
+            "-content_type", "audio/mpeg",
             "-y",  # Overwrite output file
             self.output_path
         ]
@@ -90,9 +92,16 @@ class Streamer:
             print(f'[STREAMER] {name} process killed')
 
     def _spawn_passthrough(self, url: str) -> subprocess.Popen:
+        if url == "hw:CARD=CODEC":
+            print('[STREAMER] Using hardware codec input')
+            format_string = "-f alsa"
+        else:
+            print(f'[STREAMER] Using URL input: {url}')
+            format_string = "-re"
+
         cmd = [
             "ffmpeg",
-            "-re",
+            format_string,
             "-i", url,
             "-vn",
             "-ac", "2", "-ar", "44100",
@@ -123,46 +132,50 @@ class Streamer:
             self._play_start_time = start
 
     def crossfade_stream(self, url: str, duration: int):
-
         fade = float(duration or self.fade)
         with self._lock:
             old_url = self._active_url
             if old_url is None or url == old_url:
-                return self._inject_source(url)
+                return self.inject_source(url)
             if not self._validate_stream(url):
                 print(f'[STREAMER] Invalid stream URL: {url}')
                 return False
 
-            print(
-                f'[STREAMER] Crossfading from {old_url} to {url}'
-            )
+            print(f'[STREAMER] Crossfading from {old_url} to {url}')
             now = time.time()
             elapsed = 0.0
             if self._play_start_time is not None:
                 elapsed = now - self._play_start_time
             print(f'[STREAMER] Elapsed time: {elapsed:.2f} seconds')
+
             self._kill(self._writer, "old-writer")
+
+            # Determine input format flags
+            old_fmt = ["-f", "alsa"] if old_url == "hw:CARD=CODEC" else ["-re"]
+            new_fmt = ["-f", "alsa"] if url == "hw:CARD=CODEC" else ["-re"]
+
+            # Handle optional seeking (only if old input is seekable)
+            ss_flag = ["-ss", f"{elapsed:.3f}"] if old_url != "hw:CARD=CODEC" else []
 
             cmd = [
                 "ffmpeg",
                 "-loglevel", "error",
-                "-ss", f"{elapsed:.3f}", "-re", "-i", old_url,
-                "-re", "-i", url,
+                *ss_flag,
+                *old_fmt, "-i", old_url,
+                *new_fmt, "-i", url,
                 "-filter_complex",
                 (
                     f"[0:a]atrim=0:{fade},afade=t=out:st=0:d={fade}[a0];"
                     f"[1:a]afade=t=in:st=0:d={fade}[a1];"
-                    f"[a0][a1]amix="
-                    f"inputs=2:duration=longest:"
-                    f"dropout_transition={fade}[aout]"
+                    f"[a0][a1]amix=inputs=2:duration=longest:dropout_transition={fade}[aout]"
                 ),
                 "-map", "[aout]",
-                "-ac", "2",
-                "-ar", "44100",
+                "-ac", "2", "-ar", "44100",
                 "-c:a", "pcm_s16le",
                 "-f", "s16le",
                 "-y", str(FIFO_PATH)
             ]
+
             start = now
             self._writer = subprocess.Popen(
                 cmd,

@@ -4,10 +4,11 @@
 [Unit]
 Description=Fondue Source Switcher Video Stream
 After=network.target
+StartLimitIntervalSec=0
 
 [Service]
-ExecStart=/usr/bin/python3 /home/pi/source_switcher/app.py
-WorkingDirectory=/home/pi/source_switcher
+ExecStart=/usr/bin/python3 /home/icradio/python_fondue/fondue/app.py
+WorkingDirectory=/home/icradio/python_fondue/fondue
 Restart=always
 User=icradio
 
