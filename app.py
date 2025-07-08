@@ -7,7 +7,7 @@ import os
 import sys
 import atexit
 
-DEFAULT_SOURCE = "STUDIO"
+DEFAULT_SOURCE = "mp3"
 OUTPUT_PATH = "icecast://source:mArc0n1@icr-emmental.media.su.ic.ac.uk:8888/radio"
 
 app = Flask(__name__)

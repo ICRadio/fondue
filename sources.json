@@ -1,5 +1,6 @@
 {
   "STUDIO": "hw:CARD=CODEC",
+  "mp3": "test.mp3",
   "RTMP - icr-kif": "rtmp://icr-brannigan.media.su.ic.ac.uk/live/icr-kif",
   "RTMP - icr-morbo": "rtmp://icr-brannigan.media.su.ic.ac.uk/live/icr-morbo",
   "RTMP - Test": "rtmp://icr-brannigan.media.su.ic.ac.uk/live/test"
