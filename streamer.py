@@ -54,18 +54,26 @@ class Streamer:
             preexec_fn=os.setsid
         )
 
-    def _validate_stream(self, url: str, timeout: float = 5.0) -> bool:
+    def _validate_stream(self, url: str, timeout: float = 5.0):
         print(f"[STREAMER] Validating stream: {url}")
         try:
             cmd = [
                 "ffmpeg",
                 "-loglevel", "error",
-                "-t", "1",  # Just try to decode 1 second
+                "-t", "1",  # Try to decode 1 second
+            ]
+
+            # Add format for soundcard input
+            if url == "hw:CARD=CODEC":
+                cmd += ["-f", "alsa"]
+
+            cmd += [
                 "-i", url,
                 "-vn",
                 "-f", "null",
                 "-"
             ]
+
             proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             try:
                 proc.communicate(timeout=timeout)
@@ -73,7 +81,11 @@ class Streamer:
                 print(f"[STREAMER] Validation timed out for: {url}")
                 proc.kill()
                 return False
+
+            if proc.returncode != 0:
+                print(f"[STREAMER] Validation failed with return code {proc.returncode} for: {url}")
             return proc.returncode == 0
+
         except Exception as e:
             print(f"[STREAMER] Exception while validating stream: {e}")
             return False
