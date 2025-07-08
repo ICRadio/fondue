@@ -52,6 +52,30 @@ class Streamer:
             preexec_fn=os.setsid
         )
 
+    def _validate_stream(self, url: str, timeout: float = 5.0) -> bool:
+        print(f"[STREAMER] Validating stream: {url}")
+        try:
+            cmd = [
+                "ffmpeg",
+                "-loglevel", "error",
+                "-t", "1",  # Just try to decode 1 second
+                "-i", url,
+                "-vn",
+                "-f", "null",
+                "-"
+            ]
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                print(f"[STREAMER] Validation timed out for: {url}")
+                proc.kill()
+                return False
+            return proc.returncode == 0
+        except Exception as e:
+            print(f"[STREAMER] Exception while validating stream: {e}")
+            return False
+
     # -- Process management
     @staticmethod
     def _kill(proc: subprocess.Popen, name: str, timeout: float = 2.0) -> None:
@@ -88,6 +112,9 @@ class Streamer:
         with self._lock:
             if url == self._active_url:
                 return
+            if not self._validate_stream(url):
+                print(f'[STREAMER] Invalid stream URL: {url}')
+                return
             self._kill(self._writer, "writer")
 
             start = time.time()
@@ -102,6 +129,9 @@ class Streamer:
             old_url = self._active_url
             if old_url is None or url == old_url:
                 return self._inject_source(url)
+            if not self._validate_stream(url):
+                print(f'[STREAMER] Invalid stream URL: {url}')
+                return
 
             print(
                 f'[STREAMER] Crossfading from {old_url} to {url}'
