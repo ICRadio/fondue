@@ -106,14 +106,14 @@ class Streamer:
     def _spawn_passthrough(self, url: str) -> subprocess.Popen:
         if url == "hw:CARD=CODEC":
             print('[STREAMER] Using hardware codec input')
-            format_string = "-f alsa"
+            format_string = ["-f", "alsa"]
         else:
             print(f'[STREAMER] Using URL input: {url}')
-            format_string = "-re"
+            format_string = ["-re"]
 
         cmd = [
             "ffmpeg",
-            format_string,
+            *format_string,
             "-i", url,
             "-vn",
             "-ac", "2", "-ar", "44100",
