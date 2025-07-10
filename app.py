@@ -21,7 +21,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SOURCE = "mp3"
+DEFAULT_SOURCE = "STUDIO"
 OUTPUT_PATH = "icecast://source:mArc0n1@icr-emmental.media.su.ic.ac.uk:8888/radio"
 
 app = Flask(__name__)
