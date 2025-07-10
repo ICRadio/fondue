@@ -9,7 +9,7 @@ import atexit
 import logging
 from logging.handlers import RotatingFileHandler
 
-LOG_FILE = '/var/log/fondue.log'
+LOG_FILE = 'fondue.log'
 
 log_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3)
 log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
