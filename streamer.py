@@ -4,6 +4,9 @@ import threading
 import time
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
 FIFO_PATH = Path("/tmp/input_pipe")
 
 
@@ -34,7 +37,7 @@ class Streamer:
         if FIFO_PATH.exists():
             FIFO_PATH.unlink()
         os.mkfifo(FIFO_PATH)
-        print(f'[STREAMER] FIFO READY at {FIFO_PATH}')
+        logger.info(f'[STREAMER] FIFO READY at {FIFO_PATH}')
 
     def _start_output_proc(self) -> None:
         cmd = [
@@ -55,7 +58,7 @@ class Streamer:
         )
 
     def _validate_stream(self, url: str, timeout: float = 5.0):
-        print(f"[STREAMER] Validating stream: {url}")
+        logger.info(f"[STREAMER] Validating stream: {url}")
         try:
             cmd = [
                 "ffmpeg",
@@ -78,37 +81,37 @@ class Streamer:
             try:
                 proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
-                print(f"[STREAMER] Validation timed out for: {url}")
+                logger.error(f"[STREAMER] Validation timed out for: {url}")
                 proc.kill()
                 return False
 
             if proc.returncode != 0:
-                print(f"[STREAMER] Validation failed with return code {proc.returncode} for: {url}")
+                logger.error(f"[STREAMER] Validation failed with return code {proc.returncode} for: {url}")
             return proc.returncode == 0
 
         except Exception as e:
-            print(f"[STREAMER] Exception while validating stream: {e}")
+            logger.error(f"[STREAMER] Exception while validating stream: {e}")
             return False
 
     # -- Process management
     @staticmethod
     def _kill(proc: subprocess.Popen, name: str, timeout: float = 2.0) -> None:
         if proc and proc.poll() is None:
-            print(f'[STREAMER] Killing {name} process')
+            logger.info(f'[STREAMER] Killing {name} process')
             proc.send_signal(subprocess.signal.SIGTERM)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
-                print(f'[STREAMER] {name} process did not terminate in time, killing it')
+                logger.error(f'[STREAMER] {name} process did not terminate in time, killing it')
                 proc.kill()
-            print(f'[STREAMER] {name} process killed')
+            logger.error(f'[STREAMER] {name} process killed')
 
     def _spawn_passthrough(self, url: str) -> subprocess.Popen:
         if url == "hw:CARD=CODEC":
-            print('[STREAMER] Using hardware codec input')
+            logger.info('[STREAMER] Using hardware codec input')
             format_string = ["-f", "alsa"]
         else:
-            print(f'[STREAMER] Using URL input: {url}')
+            logger.info(f'[STREAMER] Using URL input: {url}')
             format_string = ["-re"]
 
         cmd = [
@@ -123,7 +126,7 @@ class Streamer:
             "-y",
             str(FIFO_PATH)
         ]
-        print(f'[STREAMER] Spawning passthrough for source: {url}')
+        logger.info(f'[STREAMER] Spawning passthrough for source: {url}')
         return subprocess.Popen(
             cmd,
             preexec_fn=os.setsid,
@@ -134,7 +137,7 @@ class Streamer:
             if url == self._active_url:
                 return
             if not self._validate_stream(url):
-                print(f'[STREAMER] Invalid stream URL: {url}')
+                logger.error(f'[STREAMER] Invalid stream URL: {url}')
                 return
             self._kill(self._writer, "writer")
 
@@ -150,15 +153,15 @@ class Streamer:
             if old_url is None or url == old_url:
                 return self.inject_source(url)
             if not self._validate_stream(url):
-                print(f'[STREAMER] Invalid stream URL: {url}')
+                logger.error(f'[STREAMER] Invalid stream URL: {url}')
                 return False
 
-            print(f'[STREAMER] Crossfading from {old_url} to {url}')
+            logger.info(f'[STREAMER] Crossfading from {old_url} to {url}')
             now = time.time()
             elapsed = 0.0
             if self._play_start_time is not None:
                 elapsed = now - self._play_start_time
-            print(f'[STREAMER] Elapsed time: {elapsed:.2f} seconds')
+            logger.info(f'[STREAMER] Elapsed time: {elapsed:.2f} seconds')
 
             self._kill(self._writer, "old-writer")
 
@@ -197,7 +200,7 @@ class Streamer:
             self._play_start_time = start
 
     def shutdown(self) -> None:
-        print('[STREAMER] Shutting down')
+        logger.info('[STREAMER] Shutting down')
         with self._lock:
             self._kill(self._writer, "writer")
 
@@ -206,4 +209,4 @@ class Streamer:
                 del self._fifo_dummy_fd
             if FIFO_PATH.exists():
                 FIFO_PATH.unlink()
-        print('[STREAMER] Shutdown complete')
+        logger.info('[STREAMER] Shutdown complete')

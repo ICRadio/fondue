@@ -6,6 +6,20 @@ from streamer import Streamer
 import os
 import sys
 import atexit
+import logging
+from logging.handlers import RotatingFileHandler
+
+LOG_FILE = '/var/log/fondue.log'
+
+log_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3)
+log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[log_handler, logging.StreamHandler(sys.stdout)]
+)
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCE = "mp3"
 OUTPUT_PATH = "icecast://source:mArc0n1@icr-emmental.media.su.ic.ac.uk:8888/radio"
@@ -20,14 +34,14 @@ streamer = Streamer(
 
 # Callback from GPIO controller
 def gpio_switch_callback(name):
-    print(f"[GPIO] Toggling to {name}")
+    logger.info(f"[GPIO] Toggling to {name}")
     try:
         old, new = sources.switch_to(name)
         old_path = sources.sources.get(old, sources.sources[new])
         new_path = sources.sources[new]
         streamer.crossfade_stream(old_path, new_path)
     except Exception as e:
-        print("[GPIO] Failed to switch:", e)
+        logger.info("[GPIO] Failed to switch:", e)
 
 # Start GPIO listener
 # gpio = GPIOController(switch_callback=gpio_switch_callback, primary_source="cam1", secondary_source="cam2")
@@ -40,16 +54,16 @@ def switch_source():
         # gpio.current = name  # sync LED state
         old, new = sources.switch_to(name)
         if old == new:
-            print('Source Already Active')
+            logger.info('Source Already Active')
             return jsonify({'status': "Source Already Active"})
 
-        print('[MAIN] Crossfading...')
+        logger.info('[MAIN] Crossfading...')
         new_path = sources.sources[new]
         status = streamer.crossfade_stream(new_path, duration=2)
         if status is False:
             # If crossfade fails, revert to old source
             sources.switch_to(old)
-            print(f'[MAIN] Crossfade failed, remaining with old source: {old}')
+            logger.error(f'[MAIN] Crossfade failed, remaining with old source: {old}')
             return jsonify({"error": "Failed to crossfade stream."}), 500
         return jsonify({"status": "switching", "from": old, "to": new})
     except ValueError as e:
@@ -89,8 +103,20 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/logs", methods=["GET"])
+def get_logs():
+    try:
+        with open(LOG_FILE, "r") as f:
+            # Only return last 100 lines
+            lines = f.readlines()[-100:]
+        return "<pre>" + "".join(lines) + "</pre>"
+    except Exception as e:
+        logger.error("Failed to read log file: %s", e)
+        return jsonify({"error": "Could not read logs."}), 500
+
+
 def cleanup_pipe(signum, frame):
-    print('CLEANING UP')
+    logger.info('CLEANING UP')
     os.system(
         'rm -rf /tmp/input_pipe'
     )
