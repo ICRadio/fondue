@@ -58,7 +58,15 @@ class Streamer:
         )
 
     def _validate_stream(self, url: str, timeout: float = 5.0):
+        if url == "hw:CARD=CODEC":
+            logger.info(f'[STREAMER] Skipping validation for codec.') # to avoid ffmpeg issue
+            return True
+        
+        if url.startswith("rtmp://"): # give rtmp room to breathe
+            timeout = 7.5
+
         logger.info(f"[STREAMER] Validating stream: {url}")
+        
         try:
             cmd = [
                 "ffmpeg",
@@ -78,6 +86,7 @@ class Streamer:
             ]
 
             proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
             try:
                 proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
