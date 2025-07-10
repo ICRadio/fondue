@@ -104,12 +104,11 @@ def index():
 
 
 @app.route("/logs", methods=["GET"])
-def get_logs():
+def api_logs():
     try:
         with open(LOG_FILE, "r") as f:
-            # Only return last 100 lines
             lines = f.readlines()[-100:]
-        return "<pre>" + "".join(lines) + "</pre>"
+        return jsonify({"logs": lines}), 200
     except Exception as e:
         logger.error("Failed to read log file: %s", e)
         return jsonify({"error": "Could not read logs."}), 500
