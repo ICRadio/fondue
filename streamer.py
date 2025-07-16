@@ -116,15 +116,23 @@ class Streamer:
             logger.error(f'[STREAMER] {name} process killed')
 
     def _spawn_passthrough(self, url: str) -> subprocess.Popen:
+        logger.info(f'[STREAMER] Spawning passthrough for source: {url}')
+        format_string = []
+        loop_flag = []
+
         if url == "hw:CARD=CODEC":
             logger.info('[STREAMER] Using hardware codec input')
             format_string = ["-f", "alsa"]
+        elif Path(url).is_file():
+            logger.info('[STREAMER] Detected file input, enabling loop')
+            loop_flag = ["-stream_loop", "-1"]
         else:
             logger.info(f'[STREAMER] Using URL input: {url}')
             format_string = ["-re"]
 
         cmd = [
             "ffmpeg",
+            *loop_flag,
             *format_string,
             "-i", url,
             "-vn",
@@ -135,7 +143,6 @@ class Streamer:
             "-y",
             str(FIFO_PATH)
         ]
-        logger.info(f'[STREAMER] Spawning passthrough for source: {url}')
         return subprocess.Popen(
             cmd,
             preexec_fn=os.setsid,
