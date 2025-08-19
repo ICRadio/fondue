@@ -188,6 +188,12 @@ class Streamer:
             # Handle optional seeking (only if old input is seekable)
             ss_flag = ["-ss", f"{elapsed:.3f}"] if old_url != "hw:CARD=CODEC" else []
 
+            # add loop flag for new URL if it's a file
+            if Path(url).is_file():
+                print('[STREAMER] Detected file input for new URL, enabling loop')
+                new_fmt.append("-stream_loop")
+                new_fmt.append("-1")
+
             cmd = [
                 "ffmpeg",
                 "-loglevel", "error",
