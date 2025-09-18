@@ -10,6 +10,12 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 LOG_FILE = 'fondue.log'
+ALLOWED_LOGS = {
+    # keys exposed to the client  -> absolute file paths on the server
+    "fondue": "fondue.log",
+    "ffmpeg": "ffmpeg.log"
+}
+DEFAULT_LOG_KEY = "fondue"
 
 log_handler = RotatingFileHandler(LOG_FILE, maxBytes=5*1024*1024, backupCount=3)
 log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
@@ -105,12 +111,29 @@ def index():
 
 @app.route("/logs", methods=["GET"])
 def api_logs():
+    """
+    GET /logs?file=<key>&lines=<n>
+      - file: one of ALLOWED_LOGS keys (defaults to DEFAULT_LOG_KEY)
+      - lines: 1..1000 (defaults to 100)
+    """
     try:
-        with open(LOG_FILE, "r") as f:
-            lines = f.readlines()[-100:]
-        return jsonify({"logs": lines}), 200
+        file_key = request.args.get("file", DEFAULT_LOG_KEY)
+        path = ALLOWED_LOGS.get(file_key)
+        if not path:
+            return jsonify({"error": "Unknown log file key."}), 400
+
+        try:
+            lines_requested = int(request.args.get("lines", "100"))
+        except ValueError:
+            lines_requested = 100
+        lines_requested = max(1, min(lines_requested, 1000))
+
+        with open(path, "r", errors="ignore") as f:
+            lines = f.readlines()[-lines_requested:]
+
+        return jsonify({"logs": lines, "file": file_key}), 200
     except Exception as e:
-        logger.error("Failed to read log file: %s", e)
+        logger.error("Failed to read log file '%s': %s", request.args.get("file"), e)
         return jsonify({"error": "Could not read logs."}), 500
 
 
