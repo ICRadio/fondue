@@ -47,7 +47,9 @@ class Streamer:
             "ffmpeg",
             "-hide_banner",  # Added to suppress version info
             "-loglevel", "warning", # or 'debug', 'verbose', 'info', 'warning', 'error', 'quiet
-            "-f", "s16le", "-ar", "44100", "-ac", "2",
+            "-thread_queue_size", "512", # increase ALSA/FIFO queue to prevent blocking
+	    "-f", "s16le", "-ar", "44100", "-ac", "2",
+	    "-fflags", "+genpts", # generate timestamps if DTS errors arise
             "-i", str(FIFO_PATH),
             "-c:a", "libmp3lame",
             "-b:a", "192k",
@@ -81,11 +83,14 @@ class Streamer:
                 "-hide_banner",  # Added to suppress version info
                 "-loglevel", "warning",
                 "-t", "1",  # Try to decode 1 second
+		"-thread_queue_size", "512",
             ]
 
             # Add format for soundcard input
             if url == "hw:CARD=CODEC":
-                cmd += ["-f", "alsa"]
+                cmd += ["-f", "alsa",
+		    "-fflags", "+genpts" # only generate pts for live inputs
+		]
 
             cmd += [
                 "-i", url,
@@ -137,7 +142,10 @@ class Streamer:
 
         if url == "hw:CARD=CODEC":
             logger.info('[STREAMER] Using hardware codec input')
-            format_string = ["-f", "alsa"]
+            format_string = ["-f", "alsa",
+			  "-fflags", "+genpts" # generate pts for live sources
+			]
+
         elif Path(url).is_file():
             logger.info('[STREAMER] Detected file input, enabling loop')
             loop_flag = ["-stream_loop", "-1"]
@@ -148,7 +156,8 @@ class Streamer:
         cmd = [
             "ffmpeg",
             "-hide_banner",  # Added to suppress version info
-            *loop_flag,
+            "-thread_queue_size", "512",
+	    *loop_flag,
             *format_string,
             "-i", url,
             "-vn",
@@ -202,8 +211,8 @@ class Streamer:
             self._kill(self._writer, "old-writer")
 
             # Determine input format flags
-            old_fmt = ["-f", "alsa"] if old_url == "hw:CARD=CODEC" else ["-re"]
-            new_fmt = ["-f", "alsa"] if url == "hw:CARD=CODEC" else ["-re"]
+            old_fmt = ["-f", "alsa", "-fflags", "+genpts"] if old_url == "hw:CARD=CODEC" else ["-re"]
+            new_fmt = ["-f", "alsa", "-fflags", "+genpts"] if url == "hw:CARD=CODEC" else ["-re"]
 
             # Handle optional seeking (only if old input is seekable)
             ss_flag = ["-ss", f"{elapsed:.3f}"] if old_url != "hw:CARD=CODEC" else []
@@ -218,6 +227,7 @@ class Streamer:
                 "ffmpeg",
                 "-hide_banner",  # Added to suppress version info
                 "-loglevel", "warning",
+		"-thread_queue_size", "512",
                 *ss_flag,
                 *old_fmt, "-i", old_url,
                 *new_fmt, "-i", url,
