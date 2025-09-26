@@ -8,7 +8,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 FIFO_PATH = Path("/tmp/input_pipe")
+LOG_FILE = "ffmpeg.log"
 
+with open(LOG_FILE, "a") as log_file:
+    log_file.write(f"\n=== STREAM RESTARTED {time.strftime('%Y-%m-%d %H:%M:%S')}===\n ")
 
 class Streamer:
     def __init__(self,
@@ -42,8 +45,11 @@ class Streamer:
     def _start_output_proc(self) -> None:
         cmd = [
             "ffmpeg",
-            "-loglevel", "error",
-            "-f", "s16le", "-ar", "44100", "-ac", "2",
+            "-hide_banner",  # Added to suppress version info
+            "-loglevel", "warning", # or 'debug', 'verbose', 'info', 'warning', 'error', 'quiet
+            "-thread_queue_size", "512", # increase ALSA/FIFO queue to prevent blocking
+	    "-f", "s16le", "-ar", "44100", "-ac", "2",
+	    "-fflags", "+genpts", # generate timestamps if DTS errors arise
             "-i", str(FIFO_PATH),
             "-c:a", "libmp3lame",
             "-b:a", "192k",
@@ -52,10 +58,14 @@ class Streamer:
             "-y",  # Overwrite output file
             self.output_path
         ]
-        subprocess.Popen(
-            cmd,
-            preexec_fn=os.setsid
-        )
+        with open(LOG_FILE, 'a') as log_file:
+            log_file.write(f"\n=== _start_output_proc {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
+            subprocess.Popen(
+                cmd,
+                preexec_fn=os.setsid,
+                stdout=log_file,
+                stderr=log_file
+            )
 
     def _validate_stream(self, url: str, timeout: float = 5.0):
         if url == "hw:CARD=CODEC":
@@ -70,13 +80,17 @@ class Streamer:
         try:
             cmd = [
                 "ffmpeg",
-                "-loglevel", "error",
+                "-hide_banner",  # Added to suppress version info
+                "-loglevel", "warning",
                 "-t", "1",  # Try to decode 1 second
+		"-thread_queue_size", "512",
             ]
 
             # Add format for soundcard input
             if url == "hw:CARD=CODEC":
-                cmd += ["-f", "alsa"]
+                cmd += ["-f", "alsa",
+		    "-fflags", "+genpts" # only generate pts for live inputs
+		]
 
             cmd += [
                 "-i", url,
@@ -85,18 +99,24 @@ class Streamer:
                 "-"
             ]
 
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with open(LOG_FILE, 'a') as log_file:
+                log_file.write(f"\n=== _validate_stream {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log_file,
+                    stderr=log_file
+                )
         
-            try:
-                proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                logger.error(f"[STREAMER] Validation timed out for: {url}")
-                proc.kill()
-                return False
+                try:
+                    proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    logger.error(f"[STREAMER] Validation timed out for: {url}")
+                    proc.kill()
+                    return False
 
-            if proc.returncode != 0:
-                logger.error(f"[STREAMER] Validation failed with return code {proc.returncode} for: {url}")
-            return proc.returncode == 0
+                if proc.returncode != 0:
+                    logger.error(f"[STREAMER] Validation failed with return code {proc.returncode} for: {url}")
+                return proc.returncode == 0
 
         except Exception as e:
             logger.error(f"[STREAMER] Exception while validating stream: {e}")
@@ -122,7 +142,10 @@ class Streamer:
 
         if url == "hw:CARD=CODEC":
             logger.info('[STREAMER] Using hardware codec input')
-            format_string = ["-f", "alsa"]
+            format_string = ["-f", "alsa",
+			  "-fflags", "+genpts" # generate pts for live sources
+			]
+
         elif Path(url).is_file():
             logger.info('[STREAMER] Detected file input, enabling loop')
             loop_flag = ["-stream_loop", "-1"]
@@ -132,21 +155,27 @@ class Streamer:
 
         cmd = [
             "ffmpeg",
-            *loop_flag,
+            "-hide_banner",  # Added to suppress version info
+            "-thread_queue_size", "512",
+	    *loop_flag,
             *format_string,
             "-i", url,
             "-vn",
             "-ac", "2", "-ar", "44100",
             "-c:a", "pcm_s16le",
             "-f", "s16le",
-            "-loglevel", "error",
+            "-loglevel", "warning",
             "-y",
             str(FIFO_PATH)
         ]
-        return subprocess.Popen(
-            cmd,
-            preexec_fn=os.setsid,
-        )
+        with open(LOG_FILE, 'a') as log_file:
+            log_file.write(f"\n=== _spawn_passthrough {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
+            return subprocess.Popen(
+                cmd,
+                preexec_fn=os.setsid,
+                stdout=log_file,
+                stderr=log_file
+            )
 
     def inject_source(self, url: str):
         with self._lock:
@@ -182,8 +211,8 @@ class Streamer:
             self._kill(self._writer, "old-writer")
 
             # Determine input format flags
-            old_fmt = ["-f", "alsa"] if old_url == "hw:CARD=CODEC" else ["-re"]
-            new_fmt = ["-f", "alsa"] if url == "hw:CARD=CODEC" else ["-re"]
+            old_fmt = ["-f", "alsa", "-fflags", "+genpts"] if old_url == "hw:CARD=CODEC" else ["-re"]
+            new_fmt = ["-f", "alsa", "-fflags", "+genpts"] if url == "hw:CARD=CODEC" else ["-re"]
 
             # Handle optional seeking (only if old input is seekable)
             ss_flag = ["-ss", f"{elapsed:.3f}"] if old_url != "hw:CARD=CODEC" else []
@@ -196,7 +225,9 @@ class Streamer:
 
             cmd = [
                 "ffmpeg",
-                "-loglevel", "error",
+                "-hide_banner",  # Added to suppress version info
+                "-loglevel", "warning",
+		"-thread_queue_size", "512",
                 *ss_flag,
                 *old_fmt, "-i", old_url,
                 *new_fmt, "-i", url,
@@ -214,10 +245,14 @@ class Streamer:
             ]
 
             start = now
-            self._writer = subprocess.Popen(
-                cmd,
-                preexec_fn=os.setsid
-            )
+            with open(LOG_FILE, 'a') as log_file:
+                log_file.write(f"\n=== crossfade_stream {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
+                self._writer = subprocess.Popen(
+                    cmd,
+                    preexec_fn=os.setsid,
+                    stdout=log_file,
+                    stderr=log_file
+                )
             self._active_url = url
             self._play_start_time = start
 
