@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -46,7 +47,7 @@ class Streamer:
         cmd = [
             "ffmpeg",
             "-hide_banner",  # Added to suppress version info
-            "-loglevel", "warning", # or 'debug', 'verbose', 'info', 'warning', 'error', 'quiet
+            "-loglevel", "debug",  # capture maximum ffmpeg verbosity
             "-thread_queue_size", "512", # increase ALSA/FIFO queue to prevent blocking
 	    "-f", "s16le", "-ar", "44100", "-ac", "2",
 	    "-fflags", "+genpts", # generate timestamps if DTS errors arise
@@ -81,7 +82,7 @@ class Streamer:
             cmd = [
                 "ffmpeg",
                 "-hide_banner",  # Added to suppress version info
-                "-loglevel", "warning",
+                "-loglevel", "debug",
                 "-t", "1",  # Try to decode 1 second
 		"-thread_queue_size", "512",
             ]
@@ -127,7 +128,7 @@ class Streamer:
     def _kill(proc: subprocess.Popen, name: str, timeout: float = 2.0) -> None:
         if proc and proc.poll() is None:
             logger.info(f'[STREAMER] Killing {name} process')
-            proc.send_signal(subprocess.signal.SIGTERM)
+            proc.send_signal(signal.SIGTERM)
             try:
                 proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
@@ -164,7 +165,7 @@ class Streamer:
             "-ac", "2", "-ar", "44100",
             "-c:a", "pcm_s16le",
             "-f", "s16le",
-            "-loglevel", "warning",
+            "-loglevel", "debug",
             "-y",
             str(FIFO_PATH)
         ]
@@ -226,7 +227,7 @@ class Streamer:
             cmd = [
                 "ffmpeg",
                 "-hide_banner",  # Added to suppress version info
-                "-loglevel", "warning",
+                "-loglevel", "debug",
 		"-thread_queue_size", "512",
                 *ss_flag,
                 *old_fmt, "-i", old_url,
