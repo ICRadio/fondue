@@ -7,6 +7,7 @@ Fondue is a tiny Flask control surface that lets ICRadio operators point an FFmp
 - Seamless source changes via FFmpeg crossfades with configurable durations
 - Persistent source catalogue (`sources.json`) managed by `SourceManager`
 - Optional GPIO integration (see `hardware.py`) for a physical toggle button + LED
+- FIFO watchdog that automatically rebuilds `/tmp/input_pipe` if FFmpeg stalls, then resumes the active source within a second
 - Basic log viewer exposed through `/logs` so operators can read rotating logs remotely
 
 ## Project Layout
@@ -67,6 +68,11 @@ This mirrors the local setup but uses the container’s Python + FFmpeg stack. R
 - The `/logs` endpoint is a thin wrapper that reads the tail of whichever key is requested in `ALLOWED_LOGS`. By default two keys are exposed: `fondue` (application log) and `ffmpeg` (if you pipe FFmpeg stderr into `ffmpeg.log`).
 - When running inside Docker, bind-mount the log files you care about so the rotation persists beyond the container lifecycle (see “Docker Option” above).
 - Log level defaults to `INFO`; edit the `logging.basicConfig` call if you need more verbose output (e.g., `DEBUG` during troubleshooting).
+
+## FIFO Watchdog
+- The `Streamer` class continuously tails `/tmp/input_pipe` and tracks its last write time. If FFmpeg stops writing for longer than `fifo_idle_timeout` (15 s by default), the watchdog tears down the FIFO, restarts the encoder, and reattaches the current source automatically.
+- Watchdog timing can be tuned via the `fifo_watchdog_interval` (polling cadence) and `fifo_idle_timeout` arguments when instantiating `Streamer`.
+- Operators no longer need to manually delete the pipe after an unexpected crash, but log entries tagged `[STREAMER] FIFO idle` will still call out when an automatic reset happened so you can investigate the underlying cause.
 
 ## Deployment Notes
 - `OUTPUT_PATH` in `app.py` points to the Icecast mount (update credentials/URI as needed).

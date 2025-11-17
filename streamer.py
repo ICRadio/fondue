@@ -1,3 +1,5 @@
+"""FFmpeg-backed audio streamer that routes multiple inputs through a FIFO."""
+
 import os
 import signal
 import subprocess
@@ -15,12 +17,23 @@ with open(LOG_FILE, "a") as log_file:
     log_file.write(f"\n=== STREAM RESTARTED {time.strftime('%Y-%m-%d %H:%M:%S')}===\n ")
 
 class Streamer:
+    """Coordinates FIFO creation, FFmpeg writers, crossfades, and watchdogs."""
+
     def __init__(self,
                  output_path: str = "output.mp3",
                  default_source: str = 'audio1',
                  fade_duration: int = 2,
                  fifo_watchdog_interval: float = 60.0,
                  fifo_idle_timeout: float = 15.0) -> None:
+        """Bootstrap the streamer and start the encoder + watchdog.
+
+        Args:
+            output_path: Destination passed to the encoding FFmpeg process.
+            default_source: Source name to start immediately, if any.
+            fade_duration: Default crossfade duration in seconds.
+            fifo_watchdog_interval: Seconds between FIFO idle checks.
+            fifo_idle_timeout: Threshold that triggers FIFO recreation.
+        """
 
         self.output_path = output_path
         self.fade = float(fade_duration)
@@ -47,12 +60,14 @@ class Streamer:
 
     # -- Private methods
     def _make_fifo(self) -> None:
+        """Create the FIFO, removing any stale version with the same path."""
         if FIFO_PATH.exists():
             FIFO_PATH.unlink()
         os.mkfifo(FIFO_PATH)
         logger.info(f'[STREAMER] FIFO READY at {FIFO_PATH}')
 
     def _start_output_proc(self) -> None:
+        """Start the FFmpeg encoder that tails the FIFO and writes output."""
         # Ensure only one encoder tailing the FIFO at a time
         self._kill(getattr(self, "_output_proc", None), "output")
         self._output_proc = None
@@ -81,6 +96,11 @@ class Streamer:
             )
 
     def _validate_stream(self, url: str, timeout: float = 5.0):
+        """Use FFmpeg to probe the given source for validity.
+
+        Returns:
+            bool: True when the probe exits successfully, False otherwise.
+        """
         if url == "hw:CARD=CODEC":
             logger.info(f'[STREAMER] Skipping validation for codec.') # to avoid ffmpeg issue
             return True
@@ -138,6 +158,7 @@ class Streamer:
     # -- Process management
     @staticmethod
     def _kill(proc: subprocess.Popen, name: str, timeout: float = 2.0) -> None:
+        """Send SIGTERM to a subprocess and wait for clean termination."""
         if proc and proc.poll() is None:
             logger.info(f'[STREAMER] Killing {name} process')
             proc.send_signal(signal.SIGTERM)
@@ -149,6 +170,7 @@ class Streamer:
             logger.error(f'[STREAMER] {name} process killed')
 
     def _spawn_passthrough(self, url: str) -> subprocess.Popen:
+        """Launch an FFmpeg process that decodes the source into the FIFO."""
         logger.info(f'[STREAMER] Spawning passthrough for source: {url}')
         format_string = []
         loop_flag = []
@@ -191,11 +213,13 @@ class Streamer:
             )
 
     def _start_fifo_watchdog(self) -> None:
+        """Start a background thread that checks for FIFO stalls."""
         thread = threading.Thread(target=self._fifo_watchdog, name="fifo-watchdog", daemon=True)
         thread.start()
         self._watchdog_thread = thread
 
     def _fifo_watchdog(self) -> None:
+        """Poll the FIFO mtime and trigger a reset if it has gone idle."""
         while not self._watchdog_stop.wait(self._fifo_watchdog_interval):
             with self._lock:
                 writer_active = self._writer and self._writer.poll() is None
@@ -210,6 +234,7 @@ class Streamer:
                 self._reset_fifo()
 
     def _reset_fifo(self) -> None:
+        """Cleanly rebuild the FIFO and resume the current source."""
         with self._lock:
             logger.info('[STREAMER] Resetting FIFO and restarting writer')
             self._kill(self._writer, "writer")
@@ -225,6 +250,7 @@ class Streamer:
                 self._writer = None
 
     def inject_source(self, url: str):
+        """Switch to the given source immediately (no crossfade)."""
         with self._lock:
             if url == self._active_url:
                 return
@@ -239,6 +265,7 @@ class Streamer:
             self._play_start_time = start
 
     def crossfade_stream(self, url: str, duration: int):
+        """Crossfade between the active source and the requested URL."""
         fade = float(duration or self.fade)
         with self._lock:
             old_url = self._active_url
@@ -304,6 +331,7 @@ class Streamer:
             self._play_start_time = start
 
     def shutdown(self) -> None:
+        """Stop all subprocesses, the watchdog thread, and remove the FIFO."""
         logger.info('[STREAMER] Shutting down')
         self._watchdog_stop.set()
         thread = getattr(self, '_watchdog_thread', None)
