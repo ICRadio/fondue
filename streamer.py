@@ -18,20 +18,29 @@ class Streamer:
     def __init__(self,
                  output_path: str = "output.mp3",
                  default_source: str = 'audio1',
-                 fade_duration: int = 2) -> None:
+                 fade_duration: int = 2,
+                 fifo_watchdog_interval: float = 60.0,
+                 fifo_idle_timeout: float = 15.0) -> None:
 
         self.output_path = output_path
         self.fade = float(fade_duration)
         self._lock = threading.Lock()
         self._writer: subprocess.Popen
         self._writer = None
+        self._output_proc: subprocess.Popen
+        self._output_proc = None
         self._active_url: str
         self._active_url = None
 
         self._play_start_time = None
+        self._fifo_watchdog_interval = float(fifo_watchdog_interval)
+        self._fifo_idle_timeout = float(fifo_idle_timeout)
+        self._watchdog_stop = threading.Event()
+        self._watchdog_thread = None
         self._make_fifo()
         self._fifo_dummy_fd = os.open(str(FIFO_PATH), os.O_RDWR)
         self._start_output_proc()
+        self._start_fifo_watchdog()
         if default_source:
             self.inject_source(default_source)
             self._active_url = default_source
@@ -44,6 +53,9 @@ class Streamer:
         logger.info(f'[STREAMER] FIFO READY at {FIFO_PATH}')
 
     def _start_output_proc(self) -> None:
+        # Ensure only one encoder tailing the FIFO at a time
+        self._kill(getattr(self, "_output_proc", None), "output")
+        self._output_proc = None
         cmd = [
             "ffmpeg",
             "-hide_banner",  # Added to suppress version info
@@ -61,7 +73,7 @@ class Streamer:
         ]
         with open(LOG_FILE, 'a') as log_file:
             log_file.write(f"\n=== _start_output_proc {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
-            subprocess.Popen(
+            self._output_proc = subprocess.Popen(
                 cmd,
                 preexec_fn=os.setsid,
                 stdout=log_file,
@@ -178,6 +190,40 @@ class Streamer:
                 stderr=log_file
             )
 
+    def _start_fifo_watchdog(self) -> None:
+        thread = threading.Thread(target=self._fifo_watchdog, name="fifo-watchdog", daemon=True)
+        thread.start()
+        self._watchdog_thread = thread
+
+    def _fifo_watchdog(self) -> None:
+        while not self._watchdog_stop.wait(self._fifo_watchdog_interval):
+            with self._lock:
+                writer_active = self._writer and self._writer.poll() is None
+            if not writer_active:
+                continue
+            try:
+                idle_seconds = time.time() - FIFO_PATH.stat().st_mtime
+            except FileNotFoundError:
+                idle_seconds = self._fifo_idle_timeout + 1
+            if idle_seconds > self._fifo_idle_timeout:
+                logger.warning(f'[STREAMER] FIFO idle for {idle_seconds:.1f}s, triggering reset')
+                self._reset_fifo()
+
+    def _reset_fifo(self) -> None:
+        with self._lock:
+            logger.info('[STREAMER] Resetting FIFO and restarting writer')
+            self._kill(self._writer, "writer")
+            if hasattr(self, '_fifo_dummy_fd'):
+                os.close(self._fifo_dummy_fd)
+                del self._fifo_dummy_fd
+            self._make_fifo()
+            self._fifo_dummy_fd = os.open(str(FIFO_PATH), os.O_RDWR)
+            self._start_output_proc()
+            if self._active_url:
+                self._writer = self._spawn_passthrough(self._active_url)
+            else:
+                self._writer = None
+
     def inject_source(self, url: str):
         with self._lock:
             if url == self._active_url:
@@ -259,8 +305,14 @@ class Streamer:
 
     def shutdown(self) -> None:
         logger.info('[STREAMER] Shutting down')
+        self._watchdog_stop.set()
+        thread = getattr(self, '_watchdog_thread', None)
+        if thread:
+            thread.join(timeout=1.0)
         with self._lock:
             self._kill(self._writer, "writer")
+            self._kill(getattr(self, "_output_proc", None), "output")
+            self._output_proc = None
 
             if hasattr(self, '_fifo_dummy_fd'):
                 os.close(self._fifo_dummy_fd)
