@@ -11,6 +11,9 @@ ExecStart=/usr/bin/python3 /home/icradio/fondue/app.py
 WorkingDirectory=/home/icradio/fondue
 Restart=always
 User=icradio
+StandardOutput=journal
+StandardError=journal
+Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=multi-user.target
