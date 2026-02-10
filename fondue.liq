@@ -33,7 +33,7 @@ studio = studio |> amplify(1.0, [])
 
 # test MP3 file (looped)
 mp3_test = single("test.mp3")
-mp3_test = mp3_file |> amplify(1.0, [])
+mp3_test = mp3_test |> amplify(1.0, [])
 
 # RTMP streams (with fallback to silence if unavailable)
 rtmp_kif = input.rtmp(url="rtmp://icr-brannigan.media.su.ic.ac.uk/live/icr-kif")
