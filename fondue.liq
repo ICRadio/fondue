@@ -23,6 +23,7 @@ set("log.file.path", "liquidsoap.log")
 set("log.level", 4)  # debug level
 set("server.telnet", true)  # start built in telnet server
 set("server.telnet.port", 1234)  # listen on 1234
+set("server.telnet.bind_addr","127.0.0.1")
 
 # source definitions
 # ==================
